@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-nginx
+data:  
+  nginx.conf: |
+    events {}
+    env MY_SECRET;
+    http {
+        server {
+            listen 8080;
+            location / {
+                set_by_lua \$my_secret 'return os.getenv("MY_SECRET")';
+                return 200 \$my_secret;
+            }
+        }
+    }
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-nginx
+  annotations:
+    # Our special annotation to tell AVP where the secrets are
+    avp.kubernetes.io/path: "ocivault"
+stringData:  
+  MY_SECRET: <my_secret_password | base64decode>   ## We already created a secret named my_secret_password in oci vault
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-nginx
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: openresty/openresty:1.19.9.1-0-alpine
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - secretRef:
+            name: my-nginx
+        volumeMounts:
+        - name: nginx-conf
+          mountPath: /usr/local/openresty/nginx/conf/
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: my-nginx
